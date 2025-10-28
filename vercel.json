@@ -1,9 +1,13 @@
 {
   "version": 2,
   "builds": [
-    { "src": "api/index.py", "use": "@vercel/python@3.11.0" }
+    {
+      "src": "api/index.py",
+      "use": "@vercel/python@3.1.0",
+      "config": { "pythonVersion": "3.11" }
+    }
   ],
   "routes": [
-    { "src": "/webhook/whatsapp", "dest": "api/index.py" }
+    { "src": "^/webhook/whatsapp$", "dest": "api/index.py" }
   ]
 }
