@@ -3,14 +3,14 @@ import logging
 from flask import Flask, request, abort, jsonify
 from dotenv import load_dotenv
 
-# ✅ import from root-level files (not utils./handler.)
-from verify import verify_challenge, verify_x_hub_signature
-from event_bus import EventBus
-from idempotency import SeenCache
-from mongo_client import MongoDB
+# ✅ Import from utils (correct folder)
+from utils.verify import verify_challenge, verify_x_hub_signature
+from utils.event_bus import EventBus
+from utils.idempotency import SeenCache
+from utils.mongo_client import MongoDB
 
-# Optional: use your WhatsApp sender directly for a lightweight fallback reply
-from send_message import send_text_reply
+# ✅ Import from handler (correct folder)
+from handler.send_message import send_text_reply
 
 load_dotenv()
 
@@ -22,7 +22,7 @@ APP_SECRET = os.getenv("APP_SECRET", "")
 
 app = Flask(__name__)
 
-# --- Mongo init (non-fatal if absent) ---
+# --- Mongo init (non-fatal if fails) ---
 try:
     MongoDB.initialize()
     logger.info("Mongo connected & indexes ensured.")
@@ -31,41 +31,32 @@ except Exception as e:
 
 # --- Event system ---
 bus = EventBus()
-seen = SeenCache(max_items=5000, ttl_seconds=60 * 60)  # 1 hour TTL
+seen = SeenCache(max_items=5000, ttl_seconds=60 * 60)
 
-def _try_receive_message(payload: dict) -> bool:
-    """
-    Try to route through your rich handler if it imports cleanly.
-    Return True if handled; False to let the fallback handle it.
-    """
+# Try lazy-import rich handler to avoid cold start crash
+def _try_receive_message(evt):
     try:
-        # Lazy import so missing deps don't crash cold start
-        from receive_message import on_message  # type: ignore
-        on_message(payload)
+        from handler.receive_message import on_message
+        on_message(evt)
         return True
     except Exception as e:
-        logger.warning("receive_message handler unavailable: %s", e)
+        logger.warning("receive_message not loaded: %s", e)
         return False
 
-def _fallback_reply(msg: dict, meta: dict) -> None:
-    """
-    Minimal, safe echo reply using your WhatsApp sender.
-    Keeps the webhook functional while you wire up service/* and LLM.
-    """
+def _fallback_reply(msg, meta):
     ws_id = msg.get("from")
     typ = msg.get("type")
     if typ == "text":
-        body = (msg.get("text", {}) or {}).get("body", "").strip()
-        reply = body or "👋 Hi! Your message was received."
+        body = msg.get("text", {}).get("body", "")
+        reply = body or "👋 Hello! I received your message."
     else:
-        reply = f"Received {typ} message. Send text to chat."
+        reply = f"Got {typ} message."
     try:
         send_text_reply(ws_id, reply)
     except Exception as e:
         logger.exception("Failed to send reply: %s", e)
 
-# Subscribe a lightweight event consumer that prefers your rich handler
-def _bus_on_message(evt: dict):
+def _bus_on_message(evt):
     if not _try_receive_message(evt):
         _fallback_reply(evt.get("message", {}), evt.get("metadata", {}))
 
@@ -80,9 +71,9 @@ def whatsapp_verify():
         abort(403, challenge_or_err)
     return challenge_or_err, 200
 
+
 @app.post("/webhook/whatsapp")
 def whatsapp_webhook():
-    # Meta requires signature verification on POSTs
     raw = request.get_data()
     sig = request.headers.get("X-Hub-Signature-256", "")
     if not verify_x_hub_signature(APP_SECRET, sig, raw):
@@ -96,7 +87,6 @@ def whatsapp_webhook():
         abort(400, "Invalid JSON")
 
     try:
-        # WhatsApp payload: entry -> changes -> value -> messages[]
         for entry in (payload.get("entry") or []):
             for change in (entry.get("changes") or []):
                 value = change.get("value") or {}
@@ -108,8 +98,6 @@ def whatsapp_webhook():
                     bus.publish("message", {"message": msg, "metadata": value.get("metadata", {})})
     except Exception as e:
         logger.exception("Error processing webhook: %s", e)
-        # Return 200 so Meta doesn't hammer retries while you iterate
         return jsonify({"status": "ignored", "error": str(e)}), 200
 
-    # Always 200 within 10s per Meta requirement
     return jsonify({"status": "ok"}), 200
