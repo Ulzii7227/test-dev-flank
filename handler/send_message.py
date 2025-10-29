@@ -1,6 +1,7 @@
 import os
 import logging
 import requests
+import re
 
 logger = logging.getLogger("handlers")
 
@@ -9,6 +10,9 @@ WHATSAPP_TOKEN = os.getenv("WHATSAPP_TOKEN")
 PHONE_NUMBER_ID = os.getenv("PHONE_NUMBER_ID")
 GRAPH_URL = "https://graph.facebook.com/v23.0"
 
+def clean_text(text: str) -> str:
+    clean = re.sub(r'<bot>\s*', '', re.sub(r'\[tool_name=[^\]]*\]\s*', '', text))
+    return clean.strip()
 
 def send_text_reply(to: str, text: str):
     if not WHATSAPP_TOKEN or not PHONE_NUMBER_ID:
@@ -19,6 +23,8 @@ def send_text_reply(to: str, text: str):
         "Authorization": f"Bearer {WHATSAPP_TOKEN}",
         "Content-Type": "application/json",
     }
+
+    text = clean_text(text)
     payload = {
         "messaging_product": "whatsapp",
         "to": to,

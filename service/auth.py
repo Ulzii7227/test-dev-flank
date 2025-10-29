@@ -1,7 +1,7 @@
 from time import time
 import logging
 
-from handlers.send_message_handler import send_text_reply
+from handler.send_message import send_text_reply
 from service.mongo import add_new_user, get_user_detail_m
 from service.redis import cache_user_detail_r, get_user_detail_r
 from utils.config import subscription_plan
@@ -9,7 +9,7 @@ from utils.config import subscription_plan
 logger = logging.getLogger("handlers")
 
 def handle_new_user(user_id, text):
-    send_text_reply(user_id, "Congratulations! You've unlocked the FLANK. Let's talk about how FLANK can help you.")
+    send_text_reply(user_id, "Congratulations! You've unlocked Flank. Let's talk about how Flank can help you.")
         
     # Add metadata
     user_data = {"is_registered": True, "registered_at": int(time())}

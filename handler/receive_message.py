@@ -5,7 +5,7 @@ from handler.debouncer import debouncer_message
 from handler.send_message import send_text_reply
 from handler.summarize_user import summarize_user_session
 from service.auth import get_user_details, handle_new_user
-from service.mongo import store_user_conversation, update_user_token_usage
+from service.mongo import store_user_conversation_m, update_user_token_usage
 from service.redis import append_conversation_redis, get_user_detail_r, update_token_usage_redis
 
 logger = logging.getLogger("handlers")
@@ -48,20 +48,20 @@ def post_prompt_tasks(total_tokens, ws_id, response):
     update_user_token_usage(ws_id,  total_tokens)
 
     response = get_user_detail_r(ws_id)
-    if response.get('token_used') and response.get('token_limit') and response.get('token_limit') < 20:
+    if response.get('token_used') and response.get('token_limit') and int(response.get('token_limit')) < 20:
         send_text_reply(ws_id, "Warning: You are running low on tokens. Please consider upgrading your plan.")
     
 
 def process_message(ws_id, combined, convo_str):
     """Process the combined message after debouncing."""
-    store_user_conversation(ws_id, combined)
+    store_user_conversation_m(ws_id, combined)
 
     logger.info(f"Store message in temp_collection for user {ws_id}")
 
     # Append to Redis conversation with TTL
     updated_convo = append_conversation_redis(ws_id, convo_str)
 
-    response, total_tokens = prompt_LLM(ws_id, updated_convo)
+    response, total_tokens = prompt_LLM(ws_id, updated_convo, convo_str)
 
     logger.info(f"Response tokens used: {total_tokens} for user {ws_id}")
 
@@ -72,7 +72,7 @@ def on_message(payload: dict):
     try:
         """Main handler for incoming WhatsApp messages."""
         user_id, text, is_forwarded = extract_payload(payload)
-        summarize_user_session(user_id)
+
         if "PROMO_FLANK" in text:
             # Add new user to DB
             handle_new_user(user_id, text)

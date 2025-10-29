@@ -1,5 +1,6 @@
 from datetime import datetime
 import logging
+import re
 import threading 
 from handler.summarize_user import summarize_user_session
 from utils.redis_client import RedisClient
@@ -40,6 +41,9 @@ def sanitize_for_redis(data):
             ]
         else:
             sanitized[k] = v
+    
+    sanitized["stage"] = sanitized.get("stage", "initial")
+    sanitized["tool_name"] = sanitized.get("tool_name", "None")
     return sanitized
 
 def cache_user_detail_r(user_id, user_doc, ttl=300):
@@ -100,6 +104,63 @@ def delete_user_conversation_redis(user_id):
     except Exception as e:
         logger.error(f"❌ Error deleting Redis conversation key for user {user_id}: {e}")
 
+def get_user_stage_r(user_id):
+    """Retrieve the user's current stage from Redis."""
+    redis_client = RedisClient().get_client()
+    redis_key = f"user:{user_id}:metadata"
+    
+    stage = redis_client.hget(redis_key, "stage")
+    if stage:
+        return stage
+    return None
+
+def get_user_stage_step_r(user_id):
+    """Retrieve the user's current stage from Redis."""
+    redis_client = RedisClient().get_client()
+    redis_key = f"user:{user_id}:metadata"
+    
+    stage_step = redis_client.hget(redis_key, "stage_step")
+    if stage_step:
+        return int(stage_step)
+    return 0
+
+def set_user_stage_step_r(user_id, stage_step):
+    """Set the user's current stage step in Redis."""
+    redis_client = RedisClient().get_client()
+    redis_key = f"user:{user_id}:metadata"
+    
+    redis_client.hset(redis_key, "stage_step", stage_step)
+
+def set_user_stage_r(user_id, stage, stage_step=1):
+    """Set the user's current stage in Redis."""
+    redis_client = RedisClient().get_client()
+    redis_key = f"user:{user_id}:metadata"
+    
+    redis_client.hset(redis_key, "stage", stage)
+    redis_client.hset(redis_key, "stage_step", str(stage_step))
+
+def detect_tools_r(text,user_id):
+    match = re.search(r"\[tool_name=(.*?)\]", text)
+    tool_name = match.group(1) if match else None
+
+    redis_client = RedisClient().get_client()
+    redis_key = f"user:{user_id}:metadata"
+
+    tool_name_old = redis_client.hget(redis_key, "tool_name")
+    if tool_name and tool_name != tool_name_old:
+        logger.info(f"User {user_id} tool updated from {tool_name_old} to {tool_name}")
+        redis_client.hset(redis_key, "tool_name", tool_name or "None")
+        set_user_stage_step_r(user_id, 1)
+
+
+def get_tools_r(user_id):
+    redis_client = RedisClient().get_client()
+    redis_key = f"user:{user_id}:metadata"
+    
+    tool_name = redis_client.hget(redis_key, "tool_name")
+    if tool_name:
+        return tool_name
+    return None
 
 def listen_for_expiry():
     client = RedisClient().get_client()

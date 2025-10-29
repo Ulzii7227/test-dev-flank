@@ -5,6 +5,13 @@ import re
 import faiss
 import numpy as np
 import openai
+import logging
+
+from service.redis import detect_tools_r, set_user_stage_r
+
+logger = logging.getLogger("handlers")
+
+from prompt_engine.user_stage import build_messages, find_stage, get_user_stage
 
 # ------------------ CONFIG ------------------
 openai.api_key = os.getenv("OPENAI_API_KEY")
@@ -60,34 +67,22 @@ def retrieve_context_jsonl(query, index, data, top_k=3):
     D, I = index.search(np.array([q_emb], dtype=np.float32), top_k)
     return "\n".join([data[i]['response'] for i in I[0]])
 
-# ------------------ CONVERSATION PARSING ------------------
-def parse_conversation(conversation):
-    """Parse <1>/<2>/<3> tags into friend, user, and current messages."""
-    friend_msgs, user_msgs, current_msgs,  = [], [], []
-    for line in conversation.strip().splitlines():
-        if line.startswith("<1>"):
-            friend_msgs.append(line.replace("<1>", "").strip())
-        elif line.startswith("<2>"):
-            user_msgs.append(line.replace("<2>", "").strip())
-        elif line.startswith("<3>"):
-            current_msgs.append(line.replace("<3>", "").strip())
-        else:
-            bot_messages = re.findall(r"<bot>(.*)", line)
-            for msg in bot_messages:
-                current_msgs.append(msg.strip())
-                
-    return friend_msgs, user_msgs, current_msgs
 
 # ------------------ MAIN PROMPT FUNCTION ------------------
-def prompt_LLM(user_id, conversation):
+def prompt_LLM(user_id, conversation, current_convo=""):
     print(f"💬 Prompting model for user {user_id}", conversation)
 
     # Load RAG / FAISS
     index, data = build_faiss_index_jsonl()
 
     # Retrieve top relevant emotional support responses
-    context_text = retrieve_context_jsonl(conversation, index, data)
+    # context_text = retrieve_context_jsonl(conversation, index, data)
+    # print(f"🧠 Retrieved RAG context for user {user_id}:", context_text)
 
+    if "Hello" in current_convo or "Hi" in current_convo or "Hey" in current_convo:
+        set_user_stage_r(user_id, "initial", 1)
+    elif "<1>" in conversation:
+        set_user_stage_r(user_id, "Greeting", 1)
     # Load refined prompt
     if not os.path.exists(PROMPT_PATH):
         raise FileNotFoundError(f"{PROMPT_PATH} not found. Add refined prompt.txt.")
@@ -95,24 +90,33 @@ def prompt_LLM(user_id, conversation):
         system_prompt = f.read()
 
     # Append RAG context to system prompt
-    system_prompt += f"\n\nRelevant emotional context from knowledge base:\n{context_text}"
+    # system_prompt += f"\n\nRelevant emotional context from knowledge base:\n{context_text}"
 
+    # Prompting stages
+    stage = get_user_stage(user_id)
+    logger.info(f"User {user_id} at old stage {stage}")
+    curr_stage, stage_step = find_stage(user_id, stage, current_convo)
+    logger.info(f"User {user_id} at stage {curr_stage}")
+    set_user_stage_r(user_id, curr_stage, stage_step)
+
+    # Build the chat messages
+    message = build_messages(conversation, curr_stage, stage_step,user_id)
+
+    logger.info(f"User {user_id} at stage {curr_stage}")
     # Attempt GPT-4o-mini can add fallback logic here
     model_list = ["gpt-4o-mini"]
     for model_name in model_list:
         try:
             response = openai.chat.completions.create(
                 model=model_name,
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": f"Hi, I’m Flank. The user says:\n{conversation}"}
-                ],
+                messages=message,
                 temperature=0.8,
                 max_tokens=300
             )
 
             total_tokens = response.usage.total_tokens
             answer = response.choices[0].message.content.strip()
+            detect_tools_r(answer,user_id)
             return answer, total_tokens
         except openai.error.InvalidRequestError as e:
             print(f"⚠️ Model {model_name} unavailable, trying next. {str(e)}")

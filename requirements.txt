@@ -1,5 +1,8 @@
-Flask
-python-dotenv
-requests
-pymongo
-redis
+Flask==3.0.3
+python-dotenv>=1.0
+redis>=5.0
+pymongo>=4.7
+requests>=2.32
+tiktoken>=0.7
+openai>=1.40
+numpy>=1.26

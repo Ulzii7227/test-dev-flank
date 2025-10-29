@@ -39,7 +39,7 @@ def add_new_user(user_id, user_data):
     user_collection.insert_one(user_doc)
     logger.info("Added new user with user_id: %s", user_id)
 
-def store_user_conversation(user_id, chat_entry):
+def store_user_conversation_m(user_id, chat_entry):
     """
     Store a single message in the user's conversation history.
     Each user has one document with a 'messages' list.

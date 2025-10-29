@@ -1,14 +1,14 @@
 import os
 import logging
+import threading
 from flask import Flask, request, abort, jsonify
 from dotenv import load_dotenv
 
-from handlers.meta_store_handler import pull_meta_store, r_
 from utils.verify import verify_challenge, verify_x_hub_signature
 from utils.event_bus import EventBus
 from utils.idempotency import SeenCache
-from handlers.message_handlers import on_message, on_status
-from utils.mongo_client import init_mongo
+from handler.receive_message import on_message
+from utils.mongo_client import MongoDB
 
 
 load_dotenv()
@@ -24,7 +24,7 @@ app = Flask(__name__)
 
 
 try:
-    init_mongo()
+    MongoDB.initialize()
     logger.info("Mongo connected & indexes ensured.")
 except Exception as e:
     logger.exception("Mongo init failed: %s", e)
@@ -33,7 +33,6 @@ except Exception as e:
 # --- Event system
 bus = EventBus()
 bus.subscribe("message", on_message)
-bus.subscribe("status", on_status)
 
 # Idempotency guard for message IDs
 seen = SeenCache(max_items=5000, ttl_seconds=60 * 60)  # 1 hour TTL
@@ -69,31 +68,9 @@ def whatsapp_webhook():
             changes = entry.get("changes", [])
             for change in changes:
                 value = change.get("value", {})
-              
-                # Status updates
-                # statuses = value.get("statuses", [])
-                # for st in statuses:
-                #     bus.publish("status", st)
 
                 # New messages
                 messages = value.get("messages", [])
-
-                # Pull the metadata from db to redis if not present
-                contacts = value.get("contacts", [])
-                if contacts:
-                    wa_id = contacts[0].get("wa_id")
-                    if wa_id:
-                        key = f"user:{wa_id}:metadata"
-
-                        # Check if metadata exists in Redis
-                        if not r_.exists(key):
-                            pull_meta_store(wa_id)  # pull from Mongo if not cached
-                        else:
-                            logger.info("Metadata for %s already in Redis", wa_id)
-                    else:
-                        logger.warning("No wa_id found in first contact")
-                else:
-                    logger.warning("No contacts in webhook payload")
 
                 for msg in messages:
                     msg_id = msg.get("id")
@@ -110,6 +87,3 @@ def whatsapp_webhook():
 
     # Always 200 within 10s per Meta's requirement
     return jsonify({"status": "ok"}), 200
-
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=PORT, debug=True)

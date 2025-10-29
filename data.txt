@@ -1,0 +1,103 @@
+Flank Chat System - Data Management Information
+
+Database Overview
+Flank Chat System uses a hybrid data management setup combining MongoDB Atlas (for persistent storage) and Redis Cloud (for in-memory caching).
+This enables fast data retrieval, session tracking, and scalable cloud-based storage.
+
+MongoDB Atlas
+Type: NoSQL Document Database
+Version: MongoDB Atlas v7.0
+
+Purpose:
+- Store user profiles, conversation histories, and summaries.
+- Maintain persistent session states and metadata.
+
+Cloud Provider: MongoDB Atlas (hosted on AWS Sydney region)
+Connection URI: mongodb+srv://flank_admin:<password>@flankdb.xxxxxx.mongodb.net/flank_chat
+Database Name: flank_chat
+
+Collections:
+
+- users – Stores user details and authentication metadata
+- messages – Stores all incoming and outgoing conversations
+- sessions – Manages chat session tracking and timestamps
+- summaries – Stores summarized conversation history
+
+Authorization:
+- Authentication: SCRAM-SHA-256
+- Username: flank
+- Password: <your_mongodb_password>
+
+IP Whitelist: Enabled (for production and deployment host IPs)
+
+TLS/SSL: Enabled for encrypted communication
+
+Redis Cloud
+Type: In-Memory Key-Value Database
+Version: Redis Enterprise Cloud v7.2
+
+Purpose:
+Manage live chat cache and active session states
+Handle conversation TTL (time-to-live) for real-time responsiveness
+Support message batching before processing
+
+Cloud Provider: Redis Labs Cloud
+Connection URL: redis://default:<password>@redis-xxxxxx.c12.ap-southeast-2-1.ec2.cloud.redislabs.com:19789
+
+Key Patterns:
+
+active:<ws_id> – Active conversation cache
+
+session:<user_id> – Session-specific temporary data
+
+summary:<conversation_id> – Cached summaries
+
+Authorization:
+
+Username: default
+
+Password: <your_redis_password>
+
+TLS: Enabled
+
+FAISS Vector Database
+
+Type: Local/Embedded Vector Index (FAISS)
+Version: FAISS v1.8.0
+
+Purpose:
+- Store and retrieve semantic embeddings for contextual RAG responses
+- Used by Python-based Flank RAG model
+
+Storage Mode: Local file system (/prompt_engine/faiss_index.bin)
+Index Type: FlatL2
+Access Control: Internal RAG service only
+
+Connection Summary
+
+Service: MongoDB Atlas
+Type: NoSQL
+Version: v7.0
+Provider: AWS (Atlas)
+Connection: mongodb+srv://flank_admin@flankdb.mongodb.net
+
+Auth: SCRAM-SHA-256
+
+Service: Redis Cloud
+Type: In-Memory
+Version: v7.2
+Provider: Redis Labs
+Connection: redis://default@redislabs.com:19789
+Auth: Password
+
+Service: FAISS
+Type: Local Vector DB
+Version: v1.8.0
+Provider: Local
+Connection: /models/faiss_index.bin
+Auth: Internal
+
+Notes
+All credentials are defined in environment variables (.env).
+Replace <password> fields with real credentials when running locally.
+For production, credentials are configured in Vercel environment variables.
