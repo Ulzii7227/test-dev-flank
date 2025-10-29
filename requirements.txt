@@ -1,8 +1,22 @@
+# ---- Core Web Framework ----
 Flask==3.0.3
 python-dotenv>=1.0
-redis>=5.0
+
+# ---- Database Clients ----
 pymongo>=4.7
+redis>=5.0
+
+# ---- API & Networking ----
 requests>=2.32
-tiktoken>=0.7
+
+# ---- AI / NLP Libraries ----
 openai>=1.40
+tiktoken>=0.7
 numpy>=1.26
+
+# ---- Optional (for RAG / Vector Search) ----
+# FAISS is large, so only include if RAG is used.
+faiss-cpu==1.8.0
+
+# ---- Utility / Dev Tools ----
+gunicorn>=22.0
