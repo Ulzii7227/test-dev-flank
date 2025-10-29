@@ -62,6 +62,15 @@ def _bus_on_message(evt):
 
 bus.subscribe("message", _bus_on_message)
 
+@app.get("/")
+def home():
+    return "Flank BE running ✅", 200
+
+@app.get("/health")
+def health():
+    return jsonify(status="ok"), 200
+
+
 # --- Routes ---
 @app.get("/webhook/whatsapp")
 def whatsapp_verify():
